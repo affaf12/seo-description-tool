@@ -1,21 +1,27 @@
-# pip install streamlit textstat plotly pandas
+# pip install streamlit textstat plotly pandas nltk
 
 import streamlit as st
 import re
 import textstat
 import plotly.graph_objects as go
 import pandas as pd
+import nltk
+from nltk.corpus import stopwords
+from collections import Counter
 
-# --- SEO / Post Scoring Function ---
-def post_score(content, target_keyword, max_length=300):
+nltk.download('stopwords')
+stop_words = set(stopwords.words('english'))
+
+# --- Function to score & optimize post ---
+def post_score_optimize(content, target_keyword, max_length=300, platform="Generic"):
     words = content.split()
     word_count = len(words)
     
-    # Keyword count
+    # Keyword count & density
     keyword_count = len(re.findall(re.escape(target_keyword), content, flags=re.IGNORECASE))
     density = (keyword_count / word_count) * 100 if word_count else 0
     
-    # Content length
+    # Content length score
     content_length = len(content)
     if content_length < 50:
         length_score = 0
@@ -24,7 +30,7 @@ def post_score(content, target_keyword, max_length=300):
     else:
         length_score = 100
     
-    # Keyword presence
+    # Keyword presence score
     keyword_score = 100 if density >= 1 else 50
     
     # Readability
@@ -42,39 +48,52 @@ def post_score(content, target_keyword, max_length=300):
     if readability < 60:
         suggestions.append("Improve readability (aim Flesch Reading Ease ≥60).")
     
-    # Condensed version if too long
-    condensed = content if content_length <= max_length else content[:max_length-3] + "..."
+    # Condensed / optimized version
+    condensed = content
+    if content_length > max_length:
+        # Try to include the target keyword and first max_length chars
+        if re.search(re.escape(target_keyword), content, flags=re.IGNORECASE):
+            start_idx = content.lower().find(target_keyword.lower())
+            end_idx = start_idx + max_length
+            condensed = content[start_idx:end_idx].strip()
+        else:
+            condensed = content[:max_length-3] + "..."
+    
+    # Generate hashtags for LinkedIn/Threads
+    hashtag_suggestions = []
+    if platform in ["LinkedIn", "Threads"]:
+        # Take top non-stopwords and target keyword
+        word_counts = Counter([w.lower().strip('.,!?') for w in words if w.lower() not in stop_words])
+        top_words = [word for word, count in word_counts.most_common(10)]
+        hashtag_suggestions = [f"#{w.replace(' ', '')}" for w in top_words if len(w) > 2]
+        if target_keyword.lower() not in [w.lower() for w in top_words]:
+            hashtag_suggestions.insert(0, f"#{target_keyword.replace(' ','')}")
     
     # Word frequency for heatmap
     word_freq = pd.Series([w.lower() for w in words]).value_counts()
     
-    return total_score, density, content_length, readability, suggestions, word_freq, condensed
+    return total_score, density, content_length, readability, suggestions, word_freq, condensed, hashtag_suggestions
 
 # --- Streamlit App ---
-st.set_page_config(page_title="Multi-Platform Post Optimizer", page_icon="📝", layout="wide")
-st.title("📝 Multi-Platform Post Optimizer")
+st.set_page_config(page_title="Advanced Multi-Platform Post Optimizer", page_icon="📝", layout="wide")
+st.title("📝 Advanced Multi-Platform Post Optimizer")
 
-# --- Platforms Tabs ---
+# Platform selection
 platform = st.radio("Select Platform", ["LinkedIn", "Threads", "Google Business"])
 
-if platform == "LinkedIn":
-    max_len = 1300  # LinkedIn post max length
-elif platform == "Threads":
-    max_len = 500  # Threads/X post length
-else:
-    max_len = 1500  # Google Business recommendation
+max_len = {"LinkedIn":1300, "Threads":500, "Google Business":1500}.get(platform, 300)
 
 post_text = st.text_area(f"Enter your {platform} post text here", height=200)
 target_keyword = st.text_input(f"Target Keyword for {platform}", value="Power BI Developer")
 
-if st.button(f"Analyze {platform} Post"):
+if st.button(f"Analyze & Optimize {platform} Post"):
     if not post_text.strip():
         st.warning("Please enter post text to analyze.")
     else:
-        score, density, length, readability, suggestions, word_freq, condensed = post_score(post_text, target_keyword, max_len)
+        score, density, length, readability, suggestions, word_freq, condensed, hashtags = post_score_optimize(post_text, target_keyword, max_len, platform)
         
         # --- Results ---
-        st.subheader(f"{platform} Post Analysis Results")
+        st.subheader(f"{platform} Post Analysis")
         st.write(f"**Score:** {score}/100")
         st.write(f"**Keyword Density:** {round(density,2)}%")
         st.write(f"**Length:** {length} characters (Max recommended: {max_len})")
@@ -88,8 +107,13 @@ if st.button(f"Analyze {platform} Post"):
             st.success("✅ Looks good!")
         
         if length > max_len:
-            st.error(f"⚠️ Post exceeds recommended length! Consider using condensed version below.")
+            st.error(f"⚠️ Post exceeds recommended length! Use condensed version below.")
             st.info(f"Suggested Condensed Post ({len(condensed)} chars):\n\n{condensed}")
+        
+        # Hashtag suggestions
+        if hashtags:
+            st.subheader("💡 Suggested Hashtags")
+            st.write(", ".join(hashtags))
         
         # --- Visuals ---
         st.subheader("Keyword Occurrences Heatmap")
