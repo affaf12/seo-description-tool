@@ -13,7 +13,7 @@ nltk.download('stopwords')
 stop_words = set(stopwords.words('english'))
 
 # --- Function to score & optimize post ---
-def post_score_optimize(content, target_keyword, max_length=300, platform="Generic"):
+def post_score_advanced(content, target_keyword, max_length=300, platform="Generic"):
     words = content.split()
     word_count = len(words)
     
@@ -51,7 +51,6 @@ def post_score_optimize(content, target_keyword, max_length=300, platform="Gener
     # Condensed / optimized version
     condensed = content
     if content_length > max_length:
-        # Try to include the target keyword and first max_length chars
         if re.search(re.escape(target_keyword), content, flags=re.IGNORECASE):
             start_idx = content.lower().find(target_keyword.lower())
             end_idx = start_idx + max_length
@@ -59,10 +58,16 @@ def post_score_optimize(content, target_keyword, max_length=300, platform="Gener
         else:
             condensed = content[:max_length-3] + "..."
     
+    # Generate multiple optimized versions
+    variants = [condensed]
+    if density < 1:
+        variants.append(condensed + f" Include '{target_keyword}' naturally in the first sentence.")
+    if readability < 60:
+        variants.append(condensed + " Rewrite some sentences for clarity and simplicity.")
+    
     # Generate hashtags for LinkedIn/Threads
     hashtag_suggestions = []
     if platform in ["LinkedIn", "Threads"]:
-        # Take top non-stopwords and target keyword
         word_counts = Counter([w.lower().strip('.,!?') for w in words if w.lower() not in stop_words])
         top_words = [word for word, count in word_counts.most_common(10)]
         hashtag_suggestions = [f"#{w.replace(' ', '')}" for w in top_words if len(w) > 2]
@@ -72,15 +77,16 @@ def post_score_optimize(content, target_keyword, max_length=300, platform="Gener
     # Word frequency for heatmap
     word_freq = pd.Series([w.lower() for w in words]).value_counts()
     
-    return total_score, density, content_length, readability, suggestions, word_freq, condensed, hashtag_suggestions
+    # Highlight missing keywords in content
+    highlighted = content.replace(target_keyword, f"**{target_keyword}**")
+    
+    return total_score, density, content_length, readability, suggestions, word_freq, variants, hashtag_suggestions, highlighted
 
 # --- Streamlit App ---
-st.set_page_config(page_title="Advanced Multi-Platform Post Optimizer", page_icon="📝", layout="wide")
-st.title("📝 Advanced Multi-Platform Post Optimizer")
+st.set_page_config(page_title="Pro Multi-Platform Post Optimizer", page_icon="📝", layout="wide")
+st.title("🚀 Pro Multi-Platform Post Optimizer")
 
-# Platform selection
 platform = st.radio("Select Platform", ["LinkedIn", "Threads", "Google Business"])
-
 max_len = {"LinkedIn":1300, "Threads":500, "Google Business":1500}.get(platform, 300)
 
 post_text = st.text_area(f"Enter your {platform} post text here", height=200)
@@ -90,9 +96,9 @@ if st.button(f"Analyze & Optimize {platform} Post"):
     if not post_text.strip():
         st.warning("Please enter post text to analyze.")
     else:
-        score, density, length, readability, suggestions, word_freq, condensed, hashtags = post_score_optimize(post_text, target_keyword, max_len, platform)
+        score, density, length, readability, suggestions, word_freq, variants, hashtags, highlighted = post_score_advanced(post_text, target_keyword, max_len, platform)
         
-        # --- Results ---
+        # --- Main Results ---
         st.subheader(f"{platform} Post Analysis")
         st.write(f"**Score:** {score}/100")
         st.write(f"**Keyword Density:** {round(density,2)}%")
@@ -106,11 +112,16 @@ if st.button(f"Analyze & Optimize {platform} Post"):
         else:
             st.success("✅ Looks good!")
         
-        if length > max_len:
-            st.error(f"⚠️ Post exceeds recommended length! Use condensed version below.")
-            st.info(f"Suggested Condensed Post ({len(condensed)} chars):\n\n{condensed}")
+        # Highlight keyword in original post
+        st.subheader("🔍 Highlighted Keyword in Original Post")
+        st.markdown(highlighted)
         
-        # Hashtag suggestions
+        # Variants
+        st.subheader("✏️ Optimized Post Variants")
+        for i, v in enumerate(variants):
+            st.info(f"Variant {i+1} ({len(v)} chars):\n\n{v}")
+        
+        # Hashtags
         if hashtags:
             st.subheader("💡 Suggested Hashtags")
             st.write(", ".join(hashtags))
