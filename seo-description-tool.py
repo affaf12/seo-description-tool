@@ -1,4 +1,3 @@
-# Install required packages first:
 # pip install streamlit textstat plotly pandas
 
 import streamlit as st
@@ -7,149 +6,93 @@ import textstat
 import plotly.graph_objects as go
 import pandas as pd
 
-# --- SEO Scoring Function ---
-def seo_score(description, target_keyword):
-    words = description.split()
+# --- SEO / Post Scoring Function ---
+def post_score(content, target_keyword, max_length=300):
+    words = content.split()
     word_count = len(words)
-    keyword_count = len(re.findall(r'\b{}\b'.format(re.escape(target_keyword)), description, flags=re.IGNORECASE))
     
-    # Keyword density
+    # Keyword count
+    keyword_count = len(re.findall(re.escape(target_keyword), content, flags=re.IGNORECASE))
     density = (keyword_count / word_count) * 100 if word_count else 0
     
-    # Meta description length score
-    meta_length = len(description)
-    if meta_length < 50:
-        meta_score = 0
-    elif meta_length > 160:
-        meta_score = 50
+    # Content length
+    content_length = len(content)
+    if content_length < 50:
+        length_score = 0
+    elif content_length > max_length:
+        length_score = 50
     else:
-        meta_score = 100
+        length_score = 100
     
-    # Keyword presence score
-    keyword_score = 100 if density >= 1 else 50  # minimum 1% density
+    # Keyword presence
+    keyword_score = 100 if density >= 1 else 50
     
-    # Readability score (Flesch-Kincaid Reading Ease)
-    readability = textstat.flesch_reading_ease(description)
+    # Readability
+    readability = textstat.flesch_reading_ease(content)
     
-    # Headings check (H1-H6)
-    headings = re.findall(r'<h[1-6]>.*?</h[1-6]>', description, flags=re.IGNORECASE)
-    heading_score = 100 if headings else 50
-    
-    # Overall SEO score (weighted)
-    seo_total_score = int((meta_score*0.3 + keyword_score*0.3 + heading_score*0.2 + min(readability, 100)*0.2))
+    # Overall score
+    total_score = int((length_score*0.3 + keyword_score*0.3 + min(readability,100)*0.4))
     
     # Suggestions
     suggestions = []
     if density < 1:
-        suggestions.append(f"Increase keyword '{target_keyword}' usage (at least 1%).")
-    if meta_length < 50:
-        suggestions.append("Meta description too short (<50 chars).")
-    if meta_length > 160:
-        suggestions.append("Meta description too long (>160 chars).")
-    if not headings:
-        suggestions.append("Add headings (H1-H6) for better SEO structure.")
+        suggestions.append(f"Increase keyword '{target_keyword}' usage (≥1%).")
+    if content_length > max_length:
+        suggestions.append(f"Content too long (> {max_length} chars). Consider condensing.")
     if readability < 60:
-        suggestions.append("Improve readability (aim for Flesch Reading Ease ≥ 60).")
+        suggestions.append("Improve readability (aim Flesch Reading Ease ≥60).")
     
-    # Determine score color
-    if seo_total_score >= 80:
-        color = "green"
-    elif seo_total_score >= 50:
-        color = "yellow"
-    else:
-        color = "red"
+    # Condensed version if too long
+    condensed = content if content_length <= max_length else content[:max_length-3] + "..."
     
     # Word frequency for heatmap
     word_freq = pd.Series([w.lower() for w in words]).value_counts()
     
-    return seo_total_score, density, meta_length, readability, suggestions, color, word_freq
+    return total_score, density, content_length, readability, suggestions, word_freq, condensed
 
 # --- Streamlit App ---
-st.set_page_config(page_title="SEO Description Scorer", page_icon="📝", layout="centered")
-st.title("📝 SEO Description Scorer")
-st.write("Paste your meta description or text below to get an SEO score, readability, keyword analysis, and interactive visual insights.")
+st.set_page_config(page_title="Multi-Platform Post Optimizer", page_icon="📝", layout="wide")
+st.title("📝 Multi-Platform Post Optimizer")
 
-description = st.text_area("Enter your description here", height=150)
-target_keyword = st.text_input("Target Keyword", value="Power BI Developer")
+# --- Platforms Tabs ---
+platform = st.radio("Select Platform", ["LinkedIn", "Threads", "Google Business"])
 
-if st.button("Analyze SEO"):
-    if not description.strip():
-        st.warning("Please enter a description to analyze.")
+if platform == "LinkedIn":
+    max_len = 1300  # LinkedIn post max length
+elif platform == "Threads":
+    max_len = 500  # Threads/X post length
+else:
+    max_len = 1500  # Google Business recommendation
+
+post_text = st.text_area(f"Enter your {platform} post text here", height=200)
+target_keyword = st.text_input(f"Target Keyword for {platform}", value="Power BI Developer")
+
+if st.button(f"Analyze {platform} Post"):
+    if not post_text.strip():
+        st.warning("Please enter post text to analyze.")
     else:
-        score, density, length, readability, suggestions, color, word_freq = seo_score(description, target_keyword)
+        score, density, length, readability, suggestions, word_freq, condensed = post_score(post_text, target_keyword, max_len)
         
-        st.subheader("SEO Analysis Results")
-        st.markdown(f"**SEO Score:** <span style='color:{color};font-weight:bold'>{score}/100</span>", unsafe_allow_html=True)
+        # --- Results ---
+        st.subheader(f"{platform} Post Analysis Results")
+        st.write(f"**Score:** {score}/100")
         st.write(f"**Keyword Density:** {round(density,2)}%")
-        st.write(f"**Meta Length:** {length} characters")
-        st.write(f"**Readability (Flesch Reading Ease):** {round(readability,2)}")
+        st.write(f"**Length:** {length} characters (Max recommended: {max_len})")
+        st.write(f"**Readability:** {round(readability,2)} Flesch Reading Ease")
         
         if suggestions:
             st.warning("Suggestions:")
             for s in suggestions:
                 st.write(f"- {s}")
         else:
-            st.success("✅ Looks good! No major SEO issues detected.")
+            st.success("✅ Looks good!")
         
-        # --- Visualizations ---
-        st.subheader("📊 SEO Visual Insights")
+        if length > max_len:
+            st.error(f"⚠️ Post exceeds recommended length! Consider using condensed version below.")
+            st.info(f"Suggested Condensed Post ({len(condensed)} chars):\n\n{condensed}")
         
-        # Keyword Density Gauge
-        fig_density = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=density,
-            domain={'x': [0, 1], 'y': [0, 1]},
-            title={'text': "Keyword Density (%)"},
-            gauge={
-                'axis': {'range': [0, 10]},
-                'bar': {'color': "darkblue"},
-                'steps': [
-                    {'range': [0, 1], 'color': "red"},
-                    {'range': [1, 3], 'color': "yellow"},
-                    {'range': [3, 10], 'color': "green"}
-                ],
-            }
-        ))
-        st.plotly_chart(fig_density, use_container_width=True)
-        
-        # Meta Length Gauge
-        fig_length = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=length,
-            domain={'x': [0, 1], 'y': [0, 1]},
-            title={'text': "Meta Description Length"},
-            gauge={
-                'axis': {'range': [0, 200]},
-                'bar': {'color': "purple"},
-                'steps': [
-                    {'range': [0, 50], 'color': "red"},
-                    {'range': [50, 160], 'color': "green"},
-                    {'range': [160, 200], 'color': "yellow"}
-                ],
-            }
-        ))
-        st.plotly_chart(fig_length, use_container_width=True)
-        
-        # Readability Gauge
-        fig_read = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=readability,
-            domain={'x': [0, 1], 'y': [0, 1]},
-            title={'text': "Readability Score"},
-            gauge={
-                'axis': {'range': [0, 100]},
-                'bar': {'color': "orange"},
-                'steps': [
-                    {'range': [0, 60], 'color': "red"},
-                    {'range': [60, 80], 'color': "yellow"},
-                    {'range': [80, 100], 'color': "green"}
-                ],
-            }
-        ))
-        st.plotly_chart(fig_read, use_container_width=True)
-        
-        # Keyword Occurrences Bar Chart (SEO Heatmap)
-        st.subheader("🔑 Keyword Occurrences (Mini SEO Heatmap)")
+        # --- Visuals ---
+        st.subheader("Keyword Occurrences Heatmap")
         fig_word = go.Figure([go.Bar(
             x=word_freq.index,
             y=word_freq.values,
